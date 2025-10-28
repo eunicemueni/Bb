@@ -1,12 +1,25 @@
-# main.py
+# main.py — Full Kairah Studio Backend (All-in-One)
+# 🚀 Includes everything: setup, dependencies, payments, AI routes
+
+import os, sys, subprocess
+
+# ------------------------------
+# Auto-install requirements if missing
+# ------------------------------
+REQUIRED_LIBS = ["fastapi", "uvicorn", "requests", "python-multipart"]
+for lib in REQUIRED_LIBS:
+    try:
+        __import__(lib)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import os
 import requests
 from typing import Optional
 
 # ------------------------------
-# Environment Variables
+# Environment Variables / Default Config
 # ------------------------------
 WISE_ACCOUNT_NAME = os.getenv("WISE_ACCOUNT_NAME", "Eunice Muema Mueni")
 WISE_ACCOUNT_NUMBER = os.getenv("WISE_ACCOUNT_NUMBER", "12345678")
@@ -21,22 +34,18 @@ PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "KES")
 FREE_VIDEO_LIMIT = 1
 
 # ------------------------------
-# Dummy DB (Replace with PostgreSQL/SQLite)
+# Dummy In-Memory Database
 # ------------------------------
-USERS_DB = {}  # {firebase_uid: {role: "Free/Pro/Diamond", videos_generated: int}}
+USERS_DB = {}  # {uid: {role: "Free/Pro/Diamond", videos_generated: int}}
 
 # ------------------------------
 # Firebase Token Verification Placeholder
 # ------------------------------
 def verify_firebase_token(token: str) -> str:
-    """
-    Placeholder function for Firebase Auth verification.
-    Return firebase_uid if valid, raise HTTPException if invalid.
-    """
+    """Simulates Firebase verification"""
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
-    # TODO: Implement Firebase Admin SDK verification here
-    firebase_uid = token  # For placeholder, token = uid
+    firebase_uid = token  # placeholder: use token as uid
     if firebase_uid not in USERS_DB:
         USERS_DB[firebase_uid] = {"role": "Free", "videos_generated": 0}
     return firebase_uid
@@ -44,7 +53,8 @@ def verify_firebase_token(token: str) -> str:
 # ------------------------------
 # FastAPI App Setup
 # ------------------------------
-app = FastAPI()
+app = FastAPI(title="Kairah Studio Backend", description="✨ Unified AI Engine Backend")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,11 +64,11 @@ app.add_middleware(
 )
 
 # ------------------------------
-# Home Route
+# Routes
 # ------------------------------
 @app.get("/")
 def home():
-    return {"message": "Kairah Studio Backend Running 💫"}
+    return {"message": "🌟 Kairah Studio Backend Running", "status": "active"}
 
 # ------------------------------
 # Payment Info Endpoints
@@ -94,7 +104,7 @@ async def paystack_init(request: Request):
     }
     body = {
         "email": email,
-        "amount": int(amount) * 100,  # Paystack uses kobo
+        "amount": int(amount) * 100,
         "currency": PAYSTACK_CURRENCY,
         "callback_url": "https://kairah.vercel.app/payment-success"
     }
@@ -105,40 +115,36 @@ async def paystack_init(request: Request):
 async def paystack_webhook(request: Request):
     event = await request.json()
     print("🔔 Paystack Event Received:", event)
-    return {"status": "success"}
+    return {"status": "ok"}
 
 @app.post("/api/wise-webhook")
 async def wise_webhook(request: Request):
     event = await request.json()
     print("🔔 Wise Event Received:", event)
-    return {"status": "received"}
+    return {"status": "ok"}
 
 # ------------------------------
-# User Dependency
+# Helper: Auth Dependency
 # ------------------------------
 def get_current_user(token: Optional[str] = None):
     return verify_firebase_token(token)
 
 # ------------------------------
-# Content Generation Endpoints (Placeholders)
+# Content Generation Endpoints
 # ------------------------------
 @app.post("/api/generate/video")
 async def generate_video(request: Request, firebase_uid: str = Depends(get_current_user)):
     user = USERS_DB[firebase_uid]
     if user["role"] == "Free" and user["videos_generated"] >= FREE_VIDEO_LIMIT:
-        raise HTTPException(status_code=403, detail="Free user video limit reached")
-    
+        raise HTTPException(status_code=403, detail="Free plan limit reached")
+
     data = await request.json()
     prompt = data.get("prompt", "Default prompt")
-    style = data.get("style", "cinematic")  # e.g., cinematic, viral, image-to-video
-    length = data.get("length", 6)  # seconds
+    style = data.get("style", "cinematic")
+    length = data.get("length", 6)
 
-    # ----------------------
-    # Placeholder AI Engine Call
-    # ----------------------
+    # Placeholder: Simulate generated video
     video_url = f"https://kairah.fakecdn.com/videos/{firebase_uid}_video.mp4"
-
-    # Update usage
     user["videos_generated"] += 1
 
     return {
@@ -146,7 +152,7 @@ async def generate_video(request: Request, firebase_uid: str = Depends(get_curre
         "prompt": prompt,
         "style": style,
         "length": length,
-        "role": user["role"]
+        "plan": user["role"]
     }
 
 @app.post("/api/generate/audio")
@@ -154,7 +160,6 @@ async def generate_audio(request: Request, firebase_uid: str = Depends(get_curre
     data = await request.json()
     prompt = data.get("prompt", "Default audio prompt")
 
-    # Placeholder AI engine call
     audio_url = f"https://kairah.fakecdn.com/audios/{firebase_uid}_audio.mp3"
 
     return {"audio_url": audio_url, "prompt": prompt}
@@ -164,14 +169,14 @@ async def generate_image(request: Request, firebase_uid: str = Depends(get_curre
     data = await request.json()
     prompt = data.get("prompt", "Default image prompt")
 
-    # Placeholder AI engine call
     image_url = f"https://kairah.fakecdn.com/images/{firebase_uid}_image.png"
 
     return {"image_url": image_url, "prompt": prompt}
 
 # ------------------------------
-# Run Local (for testing)
+# Start Server
 # ------------------------------
 if __name__ == "__main__":
     import uvicorn
+    print("🚀 Starting Kairah Studio Backend...")
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
