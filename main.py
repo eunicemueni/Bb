@@ -1,182 +1,179 @@
-# main.py — Full Kairah Studio Backend (All-in-One)
-# 🚀 Includes everything: setup, dependencies, payments, AI routes
+# main.py
+import os
+import subprocess
+import sys
 
-import os, sys, subprocess
-
-# ------------------------------
-# Auto-install requirements if missing
-# ------------------------------
-REQUIRED_LIBS = ["fastapi", "uvicorn", "requests", "python-multipart"]
-for lib in REQUIRED_LIBS:
+# Auto-install required packages if missing
+packages = ["fastapi", "uvicorn", "requests", "stripe", "python-dotenv", "pydantic"]
+for pkg in packages:
     try:
-        __import__(lib)
+        __import__(pkg)
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg)
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import stripe
 import requests
-from typing import Optional
 
-# ------------------------------
-# Environment Variables / Default Config
-# ------------------------------
-WISE_ACCOUNT_NAME = os.getenv("WISE_ACCOUNT_NAME", "Eunice Muema Mueni")
-WISE_ACCOUNT_NUMBER = os.getenv("WISE_ACCOUNT_NUMBER", "12345678")
-WISE_ROUTING_NUMBER = os.getenv("WISE_ROUTING_NUMBER", "020123456")
+app = FastAPI()
 
-PAYPAL_EMAIL = os.getenv("PAYPAL_EMAIL", "eunicemueni1009@gmail.com")
-
-PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY", "pk_test_d3297a9a8fe29af2c3f012b77ea38d7df9f00480")
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "sk_test_b0e3fdb6e346294f423e174557e25321bf9d855e")
-PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "KES")
-
-FREE_VIDEO_LIMIT = 1
-
-# ------------------------------
-# Dummy In-Memory Database
-# ------------------------------
-USERS_DB = {}  # {uid: {role: "Free/Pro/Diamond", videos_generated: int}}
-
-# ------------------------------
-# Firebase Token Verification Placeholder
-# ------------------------------
-def verify_firebase_token(token: str) -> str:
-    """Simulates Firebase verification"""
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing token")
-    firebase_uid = token  # placeholder: use token as uid
-    if firebase_uid not in USERS_DB:
-        USERS_DB[firebase_uid] = {"role": "Free", "videos_generated": 0}
-    return firebase_uid
-
-# ------------------------------
-# FastAPI App Setup
-# ------------------------------
-app = FastAPI(title="Kairah Studio Backend", description="✨ Unified AI Engine Backend")
-
+# Allow frontend calls
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Replace with frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ------------------------------
-# Routes
-# ------------------------------
-@app.get("/")
-def home():
-    return {"message": "🌟 Kairah Studio Backend Running", "status": "active"}
+# -------------------
+# Environment / Keys
+# -------------------
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_...")
+stripe.api_key = STRIPE_SECRET_KEY
 
-# ------------------------------
-# Payment Info Endpoints
-# ------------------------------
-@app.get("/api/wise-info")
-def wise_info():
-    return {
-        "account_name": WISE_ACCOUNT_NAME,
-        "account_number": WISE_ACCOUNT_NUMBER,
-        "routing_number": WISE_ROUTING_NUMBER,
-        "currency": "USD"
-    }
+MPESA_KEY = os.environ.get("MPESA_KEY", "your_mpesa_key")
+MPESA_SECRET = os.environ.get("MPESA_SECRET", "your_mpesa_secret")
+MPESA_SHORTCODE = os.environ.get("MPESA_SHORTCODE", "your_shortcode")
+MPESA_PASSKEY = os.environ.get("MPESA_PASSKEY", "your_passkey")
 
-@app.get("/api/paypal-info")
-def paypal_info():
-    return {
-        "paypal_email": PAYPAL_EMAIL,
-        "currency": "USD",
-        "type": "personal"
-    }
+PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "sk_test_...")
+PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "pk_test_...")
 
-@app.post("/api/paystack/init")
-async def paystack_init(request: Request):
-    data = await request.json()
-    email = data.get("email")
-    amount = data.get("amount")
-    if not email or not amount:
-        raise HTTPException(status_code=400, detail="Missing email or amount")
+WISE_API_TOKEN = os.environ.get("WISE_API_TOKEN", "your_wise_api_token")
 
-    headers = {
-        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
-        "Content-Type": "application/json"
-    }
-    body = {
-        "email": email,
-        "amount": int(amount) * 100,
-        "currency": PAYSTACK_CURRENCY,
-        "callback_url": "https://kairah.vercel.app/payment-success"
-    }
-    response = requests.post("https://api.paystack.co/transaction/initialize", headers=headers, json=body)
+VIDEO_API_KEY = os.environ.get("VIDEO_API_KEY", "your_ai_video_api_key")
+VIDEO_API_URL = "https://your-ai-video-api.com/generate"  # Replace with your AI generator
+
+# -------------------
+# Models
+# -------------------
+class PaymentRequest(BaseModel):
+    amount: float
+    currency: str
+    email: str
+
+class VideoRequest(BaseModel):
+    prompt: str
+    user_email: str
+
+# -------------------
+# In-memory DB
+# -------------------
+users_db = {}        # email -> {email, plan}
+affiliates_db = {}   # code -> {email, commission}
+
+# -------------------
+# Helper
+# -------------------
+def can_generate_video(user_email):
+    user = users_db.get(user_email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return True
+
+# -------------------
+# Signup (auto ready for video)
+# -------------------
+@app.post("/api/signup")
+async def signup(req: PaymentRequest):
+    if req.email in users_db:
+        raise HTTPException(status_code=400, detail="User already exists")
+    users_db[req.email] = {"email": req.email, "plan": "free"}  # free plan by default
+    return {"message": "User created, ready to generate videos"}
+
+# -------------------
+# Login
+# -------------------
+@app.post("/api/login")
+async def login(req: PaymentRequest):
+    if req.email not in users_db:
+        raise HTTPException(status_code=400, detail="User not found")
+    return {"message": "Login successful", "user": users_db[req.email]}
+
+# -------------------
+# Video Generation
+# -------------------
+@app.post("/api/generate-video")
+async def generate_video(req: VideoRequest):
+    can_generate_video(req.user_email)
+    user = users_db[req.user_email]
+    length = 6 if user["plan"] == "free" else 30  # free users = 6s, paid = 30s
+    payload = {"prompt": req.prompt, "user_email": req.user_email, "length_seconds": length}
+    headers = {"Authorization": f"Bearer {VIDEO_API_KEY}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(VIDEO_API_URL, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        video_url = data.get("video_url")
+        if not video_url:
+            raise HTTPException(status_code=500, detail="Video generation failed")
+        return {"video_url": video_url, "message": f"Video generated successfully ({length}s)"}
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Video API error: {str(e)}")
+
+# -------------------
+# Stripe Payment
+# -------------------
+@app.post("/api/create-stripe-payment")
+async def create_stripe_payment(req: PaymentRequest):
+    try:
+        payment_intent = stripe.PaymentIntent.create(
+            amount=int(req.amount * 100),
+            currency=req.currency.lower(),
+            receipt_email=req.email,
+        )
+        # Upgrade user to paid plan automatically
+        if req.email in users_db:
+            users_db[req.email]["plan"] = "paid"
+        return {"client_secret": payment_intent.client_secret}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# -------------------
+# M-Pesa Express
+# -------------------
+@app.post("/api/mpesa-express")
+async def mpesa_express(req: PaymentRequest):
+    # Placeholder: implement STK push
+    if req.email in users_db:
+        users_db[req.email]["plan"] = "paid"
+    return {"message": f"STK Push triggered for {req.amount} {req.currency} to {req.email}, user upgraded to paid"}
+
+# -------------------
+# Paystack
+# -------------------
+@app.post("/api/paystack-init")
+async def paystack_init(req: PaymentRequest):
+    headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
+    data = {"email": req.email, "amount": int(req.amount * 100), "callback_url": "https://bb-6-ym40.onrender.com/api/paystack-webhook"}
+    response = requests.post("https://api.paystack.co/transaction/initialize", json=data, headers=headers)
     return response.json()
 
 @app.post("/api/paystack-webhook")
 async def paystack_webhook(request: Request):
     event = await request.json()
-    print("🔔 Paystack Event Received:", event)
-    return {"status": "ok"}
+    if event.get("event") == "charge.success":
+        email = event["data"]["customer"]["email"]
+        if email in users_db:
+            users_db[email]["plan"] = "paid"
+        return {"status": "success"}
+    return {"status": "ignored"}
 
-@app.post("/api/wise-webhook")
-async def wise_webhook(request: Request):
-    event = await request.json()
-    print("🔔 Wise Event Received:", event)
-    return {"status": "ok"}
+# -------------------
+# Affiliate
+# -------------------
+@app.post("/api/affiliate")
+async def affiliate(req: PaymentRequest):
+    code = req.email.split("@")[0] + "_ref"
+    affiliates_db[code] = {"email": req.email, "commission": 0}
+    return {"referral_code": code, "message": "Affiliate created"}
 
-# ------------------------------
-# Helper: Auth Dependency
-# ------------------------------
-def get_current_user(token: Optional[str] = None):
-    return verify_firebase_token(token)
-
-# ------------------------------
-# Content Generation Endpoints
-# ------------------------------
-@app.post("/api/generate/video")
-async def generate_video(request: Request, firebase_uid: str = Depends(get_current_user)):
-    user = USERS_DB[firebase_uid]
-    if user["role"] == "Free" and user["videos_generated"] >= FREE_VIDEO_LIMIT:
-        raise HTTPException(status_code=403, detail="Free plan limit reached")
-
-    data = await request.json()
-    prompt = data.get("prompt", "Default prompt")
-    style = data.get("style", "cinematic")
-    length = data.get("length", 6)
-
-    # Placeholder: Simulate generated video
-    video_url = f"https://kairah.fakecdn.com/videos/{firebase_uid}_video.mp4"
-    user["videos_generated"] += 1
-
-    return {
-        "video_url": video_url,
-        "prompt": prompt,
-        "style": style,
-        "length": length,
-        "plan": user["role"]
-    }
-
-@app.post("/api/generate/audio")
-async def generate_audio(request: Request, firebase_uid: str = Depends(get_current_user)):
-    data = await request.json()
-    prompt = data.get("prompt", "Default audio prompt")
-
-    audio_url = f"https://kairah.fakecdn.com/audios/{firebase_uid}_audio.mp3"
-
-    return {"audio_url": audio_url, "prompt": prompt}
-
-@app.post("/api/generate/image")
-async def generate_image(request: Request, firebase_uid: str = Depends(get_current_user)):
-    data = await request.json()
-    prompt = data.get("prompt", "Default image prompt")
-
-    image_url = f"https://kairah.fakecdn.com/images/{firebase_uid}_image.png"
-
-    return {"image_url": image_url, "prompt": prompt}
-
-# ------------------------------
-# Start Server
-# ------------------------------
+# -------------------
+# Run Server
+# -------------------
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Kairah Studio Backend...")
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
