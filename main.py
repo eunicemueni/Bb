@@ -58,6 +58,7 @@ app.add_middleware(
 # -----------------------------
 
 # Stripe settings
+STRIPE_SECRET_KEY = "sk_test_51RoZXfH4iReDKpeMCJKZRUiEiJ4C9puNosL07iOh5p1QU5BXO3rJNACM62xsvzKqXwphxylp4XgaX3uM4qroE9eT002CpThr19"
 STRIPE_WEBHOOK_SECRET = "whsec_1234567890abcdef"
 
 # Paystack settings
