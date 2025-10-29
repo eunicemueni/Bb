@@ -2,6 +2,11 @@ import os
 import sys
 import subprocess
 import json
+import requests
+from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
 # -----------------------------
 # Auto-install required packages
@@ -10,26 +15,16 @@ REQUIRED = [
     "fastapi",
     "uvicorn",
     "requests",
+    "paypalrestsdk",
     "python-dotenv",
     "pydantic",
     "firebase-admin",
-    "paypalrestsdk",
-    "pywise",  # For Wise API integration
 ]
-
-# Install any missing required packages
 for pkg in REQUIRED:
     try:
         __import__(pkg)
     except ImportError:
         subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-
-# Now import the necessary packages
-import requests
-from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
 
 # -----------------------------
 # Initialize FastAPI App and CORS
@@ -46,22 +41,26 @@ app.add_middleware(
 # -----------------------------
 # Hardcoded Environment Variables (for deployment)
 # -----------------------------
+# Wise Settings
+WISE_ACCOUNT_NAME = "Kairah"
+WISE_ROUTING_NUMBER = "020123456"
+WISE_ACCOUNT_NUMBER = "12345678"
 
-# Paystack settings
-PAYSTACK_SECRET_KEY = "sk_test_b0e3fdb6e346294f423e174557e25321bf9d855e"
+# PayPal Settings
+PAYPAL_CLIENT_ID = "your_paypal_client_id"
+PAYPAL_SECRET = "your_paypal_secret"
+PAYPAL_WEBHOOK_ID = "your_paypal_webhook_id"
+
+# Paystack Settings
+PAYSTACK_SECRET_KEY = "your_paystack_secret_key"
 PAYSTACK_WEBHOOK_SECRET = "paystack_webhook_secret"
 
-# M-Pesa settings
+# M-Pesa Settings
 MPESA_CONSUMER_KEY = "your_mpesa_consumer_key"
 MPESA_CONSUMER_SECRET = "your_mpesa_consumer_secret"
 MPESA_SHORTCODE = "your_mpesa_shortcode"
 MPESA_PASSKEY = "your_mpesa_passkey"
 MPESA_CALLBACK_URL = "https://yourdomain.com/api/mpesa-webhook"
-
-# Wise settings (for payout)
-WISE_ACCOUNT_NUMBER = "12345678"
-WISE_ROUTING_NUMBER = "020123456"
-WISE_BUSINESS_NAME = "kairah"
 
 # Firebase (optional, can be skipped if not used)
 FIREBASE_SERVICE_ACCOUNT_JSON = "your_firebase_service_account_json"
@@ -78,16 +77,32 @@ PORT = 8000
 # -----------------------------
 import paypalrestsdk
 paypalrestsdk.configure({
-    "mode": "sandbox",  # Change to 'live' for production
-    "client_id": "your_paypal_client_id",
-    "client_secret": "your_paypal_client_secret"
+    "mode": "sandbox",  # Change to 'live' in production
+    "client_id": PAYPAL_CLIENT_ID,
+    "client_secret": PAYPAL_SECRET
 })
 
 # -----------------------------
-# Initialize Wise (for payments)
+# Initialize Stripe (Removed per request)
 # -----------------------------
-import pywise
-wise = pywise.WiseAPI(api_key="your_wise_api_key")
+
+# -----------------------------
+# Firebase initialization (optional)
+# -----------------------------
+USE_FIREBASE = False
+try:
+    if FIREBASE_SERVICE_ACCOUNT_JSON:
+        import firebase_admin
+        from firebase_admin import credentials, auth
+        try:
+            sa = json.loads(FIREBASE_SERVICE_ACCOUNT_JSON)
+            cred = credentials.Certificate(sa)
+        except Exception:
+            cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_JSON)
+        firebase_admin.initialize_app(cred)
+        USE_FIREBASE = True
+except Exception:
+    USE_FIREBASE = False
 
 # -----------------------------
 # Local DB (in-memory fallback)
@@ -102,9 +117,9 @@ payments_db = {}     # payment_id -> {"email", "method", "amount", "status"}
 # -----------------------------
 PLANS = {
     "Free": {"price_month": 0, "price_year": 0, "video_limit": 1},
-    "Pro": {"price_month": 19, "price_year": 300, "video_limit": 60},
-    "Diamond": {"price_month": 49, "price_year": 450, "video_limit": 180},
-    "Cinematic": {"price_month": 99, "price_year": 600, "video_limit": 300},
+    "Pro": {"price_month": 19, "price_year": 300, "video_limit": 10},
+    "Diamond": {"price_month": 49, "price_year": 450, "video_limit": None},
+    "Cinematic": {"price_month": 99, "price_year": 600, "video_limit": None},
     "Lifetime": {"price_one_time": 500, "video_limit": None},
 }
 
@@ -112,6 +127,13 @@ PLANS = {
 # Helper Functions
 # -----------------------------
 def get_user(email: str):
+    if USE_FIREBASE:
+        try:
+            from firebase_admin import auth as fb_auth
+            u = fb_auth.get_user_by_email(email)
+            return {"email": u.email, "uid": u.uid, "plan": "free"}
+        except Exception:
+            return users_db.get(email)
     return users_db.get(email)
 
 def create_user_local(email: str, display_name: Optional[str] = None, referral_code: Optional[str] = None):
@@ -176,12 +198,18 @@ async def api_generate_video(req: VideoRequest):
     user = get_user(req.user_email)
     if not user:
         raise HTTPException(status_code=401, detail="User not found. Please signup/login.")
-    length = 6 if user.get("plan", "free") == "free" else 30
+    
+    length = 6 if user.get("plan", "free") == "free" else (30 if user["plan"] == "Pro" else 180)
+    
+    if user["plan"] == "Pro" and len(videos_db) >= 10:
+        raise HTTPException(status_code=403, detail="Pro users are limited to 10 videos.")
+    
     if not VIDEO_API_URL or not VIDEO_API_KEY:
         video_id = f"{req.user_email.replace('@','_')}_{len(videos_db)+1}"
         video_url = f"https://cdn.kairahstudio.com/mock_videos/{video_id}.mp4"
         videos_db[video_id] = {"email": req.user_email, "prompt": req.prompt, "url": video_url, "length": length}
         return {"video_url": video_url, "message": f"Mock video generated ({length}s)"}
+    
     headers = {"Authorization": f"Bearer {VIDEO_API_KEY}", "Content-Type": "application/json"}
     payload = {"prompt": req.prompt, "user_email": req.user_email, "length_seconds": length}
     try:
@@ -198,7 +226,7 @@ async def api_generate_video(req: VideoRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # -----------------------------
-# Payment Webhooks (Paystack, M-Pesa, Wise)
+# Payment Webhooks (Paystack, PayPal, M-Pesa, Wise)
 # -----------------------------
 @app.post("/api/paystack-webhook")
 async def paystack_webhook(req: Request):
@@ -214,14 +242,26 @@ async def paystack_webhook(req: Request):
         record_payment(event["id"], email, "paystack", amount, "completed")
     return {"status": "success"}
 
+@app.post("/api/paypal-webhook")
+async def paypal_webhook(req: Request):
+    payload = await req.json()
+    if verify_paypal_signature(payload):
+        email = payload.get("email")
+        amount = payload.get("amount")
+        upgrade_user_plan(email, "Pro")
+        record_payment(payload.get("id"), email, "paypal", amount, "completed")
+    return {"status": "success"}
+
 @app.post("/api/mpesa-webhook")
 async def mpesa_webhook(req: Request):
     payload = await req.json()
+    # Handle M-Pesa callback
     return {"status": "success"}
 
 @app.post("/api/wise-webhook")
 async def wise_webhook(req: Request):
     payload = await req.json()
+    # Handle Wise callback
     return {"status": "success"}
 
 # -----------------------------
