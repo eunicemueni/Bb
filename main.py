@@ -1,22 +1,9 @@
-"""
-Kairah Studio - Backend (Ready for Deployment)
-Features:
-- User Sign-up/Login (Firebase or fallback local DB)
-- Wise API (payment handling)
-- Paystack Init + Webhook (auto-upgrade plan on payment success)
-- M-Pesa STK Push Init (placeholder, with callback handling)
-- Video generation call with dynamic video limit based on user plan
-- Affiliate system (referral codes, commissions)
-- Auto-install required packages if missing
-- Single-file deployment
-"""
-
 import os
 import sys
 import subprocess
 import json
 import requests
-from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -30,9 +17,7 @@ REQUIRED = [
     "python-dotenv",
     "pydantic",
     "firebase-admin",
-    "gunicorn",
 ]
-
 for pkg in REQUIRED:
     try:
         __import__(pkg)
@@ -58,29 +43,9 @@ app.add_middleware(
 # Wise settings
 WISE_ACCOUNT_NUMBER = "12345678"
 WISE_ROUTING_NUMBER = "020123456"
-WISE_API_TOKEN = "your_wise_api_token"
-WISE_PROFILE_ID = "your_wise_profile_id"
 
-# Paystack settings
-PAYSTACK_SECRET_KEY = "paystack_secret_key"
-PAYSTACK_WEBHOOK_SECRET = "paystack_webhook_secret"
-
-# M-Pesa settings
-MPESA_CONSUMER_KEY = "your_mpesa_consumer_key"
-MPESA_CONSUMER_SECRET = "your_mpesa_consumer_secret"
-MPESA_SHORTCODE = "your_mpesa_shortcode"
-MPESA_PASSKEY = "your_mpesa_passkey"
-MPESA_CALLBACK_URL = "https://yourdomain.com/api/mpesa-webhook"
-
-# Firebase (optional, can be skipped if not used)
+# Firebase (optional)
 FIREBASE_SERVICE_ACCOUNT_JSON = "your_firebase_service_account_json"
-
-# General settings
-PORT = 8000
-
-# -----------------------------
-# Firebase initialization (optional)
-# -----------------------------
 USE_FIREBASE = False
 try:
     if FIREBASE_SERVICE_ACCOUNT_JSON:
@@ -108,10 +73,10 @@ payments_db = {}     # payment_id -> {"email", "method", "amount", "status"}
 # Plan definitions (monthly/yearly pricing)
 # -----------------------------
 PLANS = {
-    "Free": {"price_month": 0, "price_year": 0, "video_limit": 1},
-    "Pro": {"price_month": 19, "price_year": 300, "video_limit": None},
-    "Diamond": {"price_month": 49, "price_year": 450, "video_limit": None},
-    "Cinematic": {"price_month": 99, "price_year": 600, "video_limit": None},
+    "Free": {"price_month": 0, "video_limit": 1},
+    "Pro": {"price_month": 19, "video_limit": 10},
+    "Diamond": {"price_month": 49, "video_limit": None},
+    "Cinematic": {"price_month": 99, "video_limit": None},
     "Lifetime": {"price_one_time": 500, "video_limit": None},
 }
 
@@ -228,3 +193,10 @@ async def paystack_webhook(req: Request):
 async def mpesa_webhook(req: Request):
     payload = await req.json()
     return {"status": "success"}
+
+# -----------------------------
+# Run with Uvicorn (Deployment Host will trigger automatically)
+# -----------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
