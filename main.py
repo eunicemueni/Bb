@@ -226,10 +226,3 @@ async def paystack_webhook(req: Request):
 async def mpesa_webhook(req: Request):
     payload = await req.json()
     return {"status": "success"}
-
-# -----------------------------
-# Run with Uvicorn
-# -----------------------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
