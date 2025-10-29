@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # -----------------------------
-# Auto-install required packages
+# Auto-install required packages if not installed
 # -----------------------------
 REQUIRED = [
     "fastapi",
@@ -18,6 +18,8 @@ REQUIRED = [
     "pydantic",
     "firebase-admin",
 ]
+
+# Automatically install packages if they are not found
 for pkg in REQUIRED:
     try:
         __import__(pkg)
