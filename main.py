@@ -187,14 +187,14 @@ def index():
 
 # --- Signup / Login ---
 @app.post("/api/signup")
-def api_signup(req: SignupRequest):
+async def api_signup(req: SignupRequest):
     if get_user(req.email):
         raise HTTPException(status_code=400, detail="User already exists")
     user = create_user_local(req.email, req.display_name, req.referral_code)
     return {"message": "User created", "user": user}
 
 @app.post("/api/login")
-def api_login(req: LoginRequest):
+async def api_login(req: LoginRequest):
     user = get_user(req.email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -202,7 +202,7 @@ def api_login(req: LoginRequest):
 
 # --- Video generation ---
 @app.post("/api/generate-video")
-def api_generate_video(req: VideoRequest):
+async def api_generate_video(req: VideoRequest):
     user = get_user(req.user_email)
     if not user:
         raise HTTPException(status_code=401, detail="User not found. Please signup/login.")
@@ -231,7 +231,7 @@ def api_generate_video(req: VideoRequest):
 # Payment Webhooks (Stripe, Paystack, M-Pesa)
 # -----------------------------
 @app.post("/api/stripe-webhook")
-def stripe_webhook(req: Request, signature: str = Header(...)):
+async def stripe_webhook(req: Request, signature: str = Header(...)):
     payload = await req.body()
     event = None
     try:
@@ -254,7 +254,7 @@ def stripe_webhook(req: Request, signature: str = Header(...)):
 
 # Example of Paystack webhook handler
 @app.post("/api/paystack-webhook")
-def paystack_webhook(req: Request):
+async def paystack_webhook(req: Request):
     payload = await req.json()
     signature = req.headers.get('X-Paystack-Signature', '')
     # Verify webhook signature, handle payment success
@@ -270,7 +270,7 @@ def paystack_webhook(req: Request):
 
 # M-Pesa webhook - placeholder (simplified)
 @app.post("/api/mpesa-webhook")
-def mpesa_webhook(req: Request):
+async def mpesa_webhook(req: Request):
     payload = await req.json()
     # Handle the M-Pesa webhook response (STK Push results, payment success, etc.)
     return {"status": "success"}
@@ -281,4 +281,3 @@ def mpesa_webhook(req: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
