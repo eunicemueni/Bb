@@ -18,8 +18,6 @@ import subprocess
 import json
 import stripe
 import requests
-import hmac
-import hashlib
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -56,43 +54,37 @@ app.add_middleware(
 )
 
 # -----------------------------
-# Load environment variables
+# Hardcoded Environment Variables (for deployment)
 # -----------------------------
-load_dotenv()
 
-# -----------------------------
-# Set environment variables (be sure to add these in Render)
-# -----------------------------
 # Stripe settings
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_SECRET = "whsec_1234567890abcdef"
 
 # Paystack settings
-PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
-PAYSTACK_WEBHOOK_SECRET = os.environ.get("PAYSTACK_WEBHOOK_SECRET", "")
+PAYSTACK_SECRET_KEY = "sk_test_b0e3fdb6e346294f423e174557e25321bf9d855e"
+PAYSTACK_WEBHOOK_SECRET = "paystack_webhook_secret"
 
 # M-Pesa settings
-MPESA_CONSUMER_KEY = os.environ.get("MPESA_CONSUMER_KEY", "")
-MPESA_CONSUMER_SECRET = os.environ.get("MPESA_CONSUMER_SECRET", "")
-MPESA_SHORTCODE = os.environ.get("MPESA_SHORTCODE", "")
-MPESA_PASSKEY = os.environ.get("MPESA_PASSKEY", "")
-MPESA_CALLBACK_URL = os.environ.get("MPESA_CALLBACK_URL", "")
+MPESA_CONSUMER_KEY = "your_mpesa_consumer_key"
+MPESA_CONSUMER_SECRET = "your_mpesa_consumer_secret"
+MPESA_SHORTCODE = "your_mpesa_shortcode"
+MPESA_PASSKEY = "your_mpesa_passkey"
+MPESA_CALLBACK_URL = "https://yourdomain.com/api/mpesa-webhook"
 
-# Firebase (optional)
-FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+# Firebase (optional, can be skipped if not used)
+FIREBASE_SERVICE_ACCOUNT_JSON = "your_firebase_service_account_json"
 
-# Video generation API (must provide URL and key)
-VIDEO_API_URL = os.environ.get("VIDEO_API_URL", "")
-VIDEO_API_KEY = os.environ.get("VIDEO_API_KEY", "")
+# Video generation API settings
+VIDEO_API_URL = "https://yourvideoapi.com/generate"
+VIDEO_API_KEY = "your_video_api_key"
 
 # General settings
-PORT = int(os.environ.get("PORT", 8000))
+PORT = 8000
 
 # -----------------------------
 # Initialize Stripe
 # -----------------------------
-if STRIPE_SECRET_KEY:
-    stripe.api_key = STRIPE_SECRET_KEY
+stripe.api_key = STRIPE_SECRET_KEY
 
 # -----------------------------
 # Firebase initialization (optional)
@@ -182,7 +174,7 @@ def credit_affiliate(email: str, amount: float):
 # Routes
 # -----------------------------
 @app.get("/")
-def index():
+async def index():
     return {"message": "Kairah Studio Backend is live!"}
 
 # --- Signup / Login ---
@@ -241,38 +233,33 @@ async def stripe_webhook(req: Request, signature: str = Header(...)):
     except stripe.error.SignatureVerificationError as e:
         raise HTTPException(status_code=400, detail="Invalid signature")
     
-    # Handle event here (e.g. payment success, subscription created)
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         email = session["customer_email"]
         amount = session["amount_total"] / 100  # Convert to dollars
-        plan = "Pro"  # Default for Stripe payments
+        plan = "Pro"
         upgrade_user_plan(email, plan)
         record_payment(session["id"], email, "stripe", amount, "completed")
         return {"status": "success"}
     return {"status": "ignored"}
 
-# Example of Paystack webhook handler
 @app.post("/api/paystack-webhook")
 async def paystack_webhook(req: Request):
     payload = await req.json()
     signature = req.headers.get('X-Paystack-Signature', '')
-    # Verify webhook signature, handle payment success
     if not verify_paystack_signature(signature, payload):
         raise HTTPException(status_code=400, detail="Invalid signature")
     event = payload.get("event")
     if event and event.get("status") == "success":
         email = event.get("email")
-        amount = event.get("amount") / 100  # Convert to dollars
+        amount = event.get("amount") / 100
         upgrade_user_plan(email, "Pro")
         record_payment(event["id"], email, "paystack", amount, "completed")
     return {"status": "success"}
 
-# M-Pesa webhook - placeholder (simplified)
 @app.post("/api/mpesa-webhook")
 async def mpesa_webhook(req: Request):
     payload = await req.json()
-    # Handle the M-Pesa webhook response (STK Push results, payment success, etc.)
     return {"status": "success"}
 
 # -----------------------------
