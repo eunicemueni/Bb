@@ -9,7 +9,7 @@ for pkg in packages:
     try:
         __import__(pkg)
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg)
+ subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
