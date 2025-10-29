@@ -9,7 +9,7 @@ for pkg in packages:
     try:
         __import__(pkg)
     except ImportError:
- subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,7 +75,7 @@ def can_generate_video(user_email):
     return True
 
 # -------------------
-# Signup (auto ready for video)
+# Signup
 # -------------------
 @app.post("/api/signup")
 async def signup(req: PaymentRequest):
@@ -125,7 +125,6 @@ async def create_stripe_payment(req: PaymentRequest):
             currency=req.currency.lower(),
             receipt_email=req.email,
         )
-        # Upgrade user to paid plan automatically
         if req.email in users_db:
             users_db[req.email]["plan"] = "paid"
         return {"client_secret": payment_intent.client_secret}
@@ -137,7 +136,6 @@ async def create_stripe_payment(req: PaymentRequest):
 # -------------------
 @app.post("/api/mpesa-express")
 async def mpesa_express(req: PaymentRequest):
-    # Placeholder: implement STK push
     if req.email in users_db:
         users_db[req.email]["plan"] = "paid"
     return {"message": f"STK Push triggered for {req.amount} {req.currency} to {req.email}, user upgraded to paid"}
