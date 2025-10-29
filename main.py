@@ -1,35 +1,35 @@
 # main.py
 """
-Kairah Studio - Single-file backend for Render (no Stripe, Wise manual confirmation)
-Features:
-- Single file with JSON persistence (kairah_data.json)
-- Removes Stripe completely
-- Paystack / PayPal / M-Pesa webhook placeholders retained
-- Wise manual confirmation endpoint for admins to confirm transfers
-- Admin protection with ADMIN_API_KEY via header 'x-admin-key'
+Kairah Studio - Single-file backend (Final)
+- No Stripe (removed)
+- Wise manual confirmation endpoint for admins
+- Paystack, PayPal, M-Pesa webhook placeholders (best-effort)
 - Firebase optional via FIREBASE_SERVICE_ACCOUNT_JSON env var
-- Affiliate 70/30 split (affiliate receives 70% of sale), $500 milestone bonus after 100 Lifetime/Cinematic referred sales
+- Admin protected routes via ADMIN_API_KEY header (x-admin-key)
+- Affiliate 70/30 commission, $500 bonus after 100 Lifetime/Cinematic referred sales
 - Fame booster price: $9
-- Plan-aware video limits & aspect ratios
-- Affiliate endpoints: GET /api/affiliate/earnings and /api/affiliate/referrals
-- Logs, CSV export, FAQ, download restriction, admin actions
-- Writes requirements.txt at startup
-Run: python main.py  OR deploy to Render with start command:
-uvicorn main:app --host 0.0.0.0 --port $PORT
+- Plan-aware video limits (Free 6s, Pro up to 60s, Diamond up to 180s, Cinematic up to 300s, Lifetime unlimited)
+- Aspect ratios: 16:9, 9:16, 1:1
+- JSON persistence to kairah_data.json
+- Writes requirements.txt on startup
+Run:
+  python main.py
+Deploy:
+  pip install -r requirements.txt
+  uvicorn main:app --host 0.0.0.0 --port $PORT
 """
 
 import os
 import sys
 import json
 import time
-import csv
 import traceback
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from decimal import Decimal
 
-# ---------------------------
-# Requirements file (auto)
-# ---------------------------
+# -------------------------
+# Auto requirements file
+# -------------------------
 REQUIREMENTS = [
     "fastapi>=0.95.0",
     "uvicorn>=0.22.0",
@@ -44,7 +44,7 @@ try:
 except Exception:
     pass
 
-# Try import, if missing try pip install once (to reduce deployment hiccups)
+# import libraries, install on first-run if missing
 try:
     from fastapi import FastAPI, Request, HTTPException, Header, Depends, Response
     from fastapi.middleware.cors import CORSMiddleware
@@ -60,10 +60,10 @@ except Exception:
     import uvicorn
     import requests
 
-# ---------------------------
-# App & CORS
-# ---------------------------
-app = FastAPI(title="Kairah Studio Backend (Wise + Paystack/PayPal/M-Pesa)")
+# -------------------------
+# App and CORS
+# -------------------------
+app = FastAPI(title="Kairah Studio Backend (Final)")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,10 +72,10 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# ---------------------------
-# Environment / Config
-# ---------------------------
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "kairah_dev_admin_key")  # change on deploy
+# -------------------------
+# Env / Config
+# -------------------------
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "kairah_dev_admin_key")
 FIREBASE_SERVICE_ACCOUNT_JSON = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_WEBHOOK_SECRET = os.environ.get("PAYSTACK_WEBHOOK_SECRET", "")
@@ -89,18 +89,17 @@ MPESA_CALLBACK_URL = os.environ.get("MPESA_CALLBACK_URL", "")
 VIDEO_API_URL = os.environ.get("VIDEO_API_URL", "")
 VIDEO_API_KEY = os.environ.get("VIDEO_API_KEY", "")
 
-# Wise account (for info only)
 WISE_ACCOUNT_NAME = os.environ.get("WISE_ACCOUNT_NAME", "Kairah")
 WISE_ROUTING_NUMBER = os.environ.get("WISE_ROUTING_NUMBER", "020123456")
 WISE_ACCOUNT_NUMBER = os.environ.get("WISE_ACCOUNT_NUMBER", "12345678")
 
-FAME_BOOSTER_PRICE = 9.0  # USD
+FAME_BOOSTER_PRICE = float(os.environ.get("FAME_BOOSTER_PRICE", "9.0"))
 
 DATA_FILE = os.environ.get("KDATA_FILE", "kairah_data.json")
 
-# ---------------------------
-# Plan definitions
-# ---------------------------
+# -------------------------
+# Plans & ratios
+# -------------------------
 PLANS = {
     "Free": {"price_month": 0, "price_year": 0, "max_seconds": 6, "video_limit": 1},
     "Pro": {"price_month": 19, "price_year": 300, "max_seconds": 60, "video_limit": None},
@@ -111,15 +110,15 @@ PLANS = {
 
 VALID_RATIOS = ["16:9", "9:16", "1:1"]
 
-# ---------------------------
-# JSON persistence (simple)
-# ---------------------------
-_initial_state = {
-    "users": {},        # email -> user dict
-    "affiliates": {},   # ref_code -> affiliate dict
-    "videos": {},       # video_id -> video dict
-    "payments": {},     # payment_id -> payment dict
-    "logs": {"video_logs": [], "payment_logs": [], "affiliate_logs": []}
+# -------------------------
+# Persistence helpers
+# -------------------------
+DEFAULT_STATE = {
+    "users": {},        # email => {...}
+    "affiliates": {},   # ref_code => {...}
+    "videos": {},       # video_id => {...}
+    "payments": {},     # payment_id => {...}
+    "logs": {"video_logs": [], "payment_logs": [], "affiliate_logs": []},
 }
 
 def load_data():
@@ -129,13 +128,12 @@ def load_data():
                 return json.load(f)
         except Exception:
             traceback.print_exc()
-            return _initial_state.copy()
-    return _initial_state.copy()
+    return DEFAULT_STATE.copy()
 
-def save_data(data):
+def save_data(state):
     try:
         with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+            json.dump(state, f, indent=2, default=str)
     except Exception:
         traceback.print_exc()
 
@@ -156,9 +154,9 @@ if "admin@kairah.local" not in data["users"]:
     }
     save_data(data)
 
-# ---------------------------
-# Firebase optional (best-effort)
-# ---------------------------
+# -------------------------
+# Firebase optional
+# -------------------------
 USE_FIREBASE = False
 firebase_admin = None
 if FIREBASE_SERVICE_ACCOUNT_JSON:
@@ -176,14 +174,14 @@ if FIREBASE_SERVICE_ACCOUNT_JSON:
     except Exception:
         USE_FIREBASE = False
 
-# ---------------------------
-# Helpers
-# ---------------------------
+# -------------------------
+# Utilities
+# -------------------------
 def now_ts():
     return int(time.time())
 
-def log(type_name: str, entry: Dict[str, Any]):
-    data["logs"].setdefault(type_name, []).append(entry)
+def log(kind: str, entry: Dict[str, Any]):
+    data["logs"].setdefault(kind, []).append(entry)
     save_data(data)
 
 def generate_affiliate_code(email: str) -> str:
@@ -198,7 +196,6 @@ def get_user(email: str) -> Optional[Dict[str, Any]]:
         try:
             from firebase_admin import auth as fb_auth
             u = fb_auth.get_user_by_email(email)
-            # map to local structure, merge if exists
             local = data["users"].get(email, {})
             return {**{"email": u.email, "uid": u.uid}, **local}
         except Exception:
@@ -252,17 +249,15 @@ def record_payment(payment_id: str, email: str, method: str, amount: float, meta
     return data["payments"][payment_id]
 
 def credit_affiliate_for_sale(ref_code: str, sale_amount: float, plan_name: str):
-    # affiliate gets 70% of sale_amount
     aff = data["affiliates"].get(ref_code)
     if not aff:
         return 0.0
     commission = float(Decimal(sale_amount) * Decimal("0.70"))
     aff["commission"] = aff.get("commission", 0.0) + commission
     log("affiliate_logs", {"ref": ref_code, "email": aff.get("email"), "commission_added": commission, "sale_amount": sale_amount, "plan": plan_name, "timestamp": now_ts()})
-    # check milestone for Lifetime/Cinematic referred sales
+    # check milestone
     special_sales = 0
     for e in aff.get("referred", []):
-        # scan payments_db for that email
         for p in data["payments"].values():
             if p["email"] == e and p["status"] == "completed":
                 plan = p.get("metadata", {}).get("plan")
@@ -276,9 +271,9 @@ def credit_affiliate_for_sale(ref_code: str, sale_amount: float, plan_name: str)
     save_data(data)
     return commission
 
-# ---------------------------
+# -------------------------
 # Pydantic models
-# ---------------------------
+# -------------------------
 class SignupRequest(BaseModel):
     email: str
     display_name: Optional[str] = None
@@ -296,14 +291,12 @@ class VideoRequest(BaseModel):
     template_id: Optional[str] = None
     music_id: Optional[str] = None
 
-# ---------------------------
-# Security dependency for admin
-# ---------------------------
+# -------------------------
+# Admin dependency
+# -------------------------
 async def require_admin(request: Request, x_admin_key: Optional[str] = Header(None)):
-    # Check static admin key first
     if x_admin_key and x_admin_key == ADMIN_API_KEY:
         return True
-    # fallback: header x-admin-email maps to local admin user
     admin_email = request.headers.get("x-admin-email")
     if admin_email:
         u = data["users"].get(admin_email)
@@ -311,12 +304,12 @@ async def require_admin(request: Request, x_admin_key: Optional[str] = Header(No
             return True
     raise HTTPException(status_code=401, detail="Admin credentials required")
 
-# ---------------------------
-# Public endpoints
-# ---------------------------
+# -------------------------
+# Routes
+# -------------------------
 @app.get("/")
 async def index():
-    return {"message": "Kairah Studio Backend (Wise +) is live", "time": now_ts()}
+    return {"message": "Kairah Studio Backend (Final) is live", "time": now_ts()}
 
 @app.post("/api/signup")
 async def api_signup(req: SignupRequest):
@@ -333,15 +326,12 @@ async def api_login(req: LoginRequest):
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Login success", "user": user}
 
-# ---------------------------
-# Affiliate endpoints
-# ---------------------------
+# Affiliate
 @app.get("/api/affiliate/earnings")
 async def affiliate_earnings(email: str):
-    # find affiliate code
     ref_code = None
-    for code, val in data["affiliates"].items():
-        if val.get("email") == email:
+    for code, v in data["affiliates"].items():
+        if v.get("email") == email:
             ref_code = code
             break
     if not ref_code:
@@ -356,21 +346,19 @@ async def affiliate_referrals(ref_code: str):
         raise HTTPException(status_code=404, detail="Affiliate not found")
     referred = []
     for e in aff.get("referred", []):
-        user = data["users"].get(e, {"email": e, "plan": "Free"})
-        referred.append({"email": e, "plan": user.get("plan")})
+        u = data["users"].get(e, {"email": e, "plan": "Free"})
+        referred.append({"email": e, "plan": u.get("plan")})
     return {"ref_code": ref_code, "referred": referred}
 
-@app.get("/api/affiliate/me")
+@app.get("/api/affiliate/referrals/me")
 async def affiliate_me(email: str):
-    for code, val in data["affiliates"].items():
-        if val.get("email") == email:
-            return {"ref_code": code, "data": val}
+    for code, v in data["affiliates"].items():
+        if v.get("email") == email:
+            return {"ref_code": code, "data": v}
     code = generate_affiliate_code(email)
     return {"ref_code": code, "data": data["affiliates"].get(code)}
 
-# ---------------------------
-# Video generation endpoint
-# ---------------------------
+# Video generation
 @app.post("/api/generate-video")
 async def api_generate_video(req: VideoRequest):
     user = get_user(req.user_email)
@@ -379,8 +367,6 @@ async def api_generate_video(req: VideoRequest):
     plan = user.get("plan", "Free")
     plan_info = PLANS.get(plan, PLANS["Free"])
     max_seconds = plan_info.get("max_seconds")
-
-    # determine requested length
     if req.requested_seconds:
         if max_seconds is not None and req.requested_seconds > max_seconds:
             raise HTTPException(status_code=400, detail=f"Your plan '{plan}' allows max {max_seconds} seconds.")
@@ -396,26 +382,15 @@ async def api_generate_video(req: VideoRequest):
             length = 180
         else:
             length = 60
-
-    # aspect ratio
     if req.aspect_ratio not in VALID_RATIOS:
         raise HTTPException(status_code=400, detail=f"Invalid aspect ratio. Allowed: {VALID_RATIOS}")
-
-    # template/music restriction
     if (req.template_id or req.music_id) and plan not in ("Diamond", "Cinematic", "Lifetime"):
-        raise HTTPException(status_code=403, detail="Premium templates/music are available to Diamond, Cinematic, and Lifetime plans only.")
-
-    # fame booster check
-    if req.fame_booster:
-        if not user.get("fame_booster_paid"):
-            return {"require_payment": True, "price": FAME_BOOSTER_PRICE, "message": "Fame booster requires $9 payment. Pay and then call /api/admin/confirm-wise or other webhook to set fame_booster_paid."}
-
-    # free plan limit enforcement
+        raise HTTPException(status_code=403, detail="Premium templates/music available to Diamond, Cinematic, Lifetime only.")
+    if req.fame_booster and not user.get("fame_booster_paid"):
+        return {"require_payment": True, "price": FAME_BOOSTER_PRICE, "message": "Fame booster requires $9 payment. Use admin /api/admin/confirm-wise to confirm."}
     if plan == "Free":
         if user.get("generated_videos", 0) >= 1:
-            raise HTTPException(status_code=403, detail="Free plan allows only 1 generated video. Upgrade to create more.")
-
-    # create mock or proxy to real video API
+            raise HTTPException(status_code=403, detail="Free plan allows only 1 generated video. Upgrade for more.")
     video_id = f"{req.user_email.replace('@','_')}_{len(data['videos'])+1}_{now_ts()}"
     video_url = f"https://cdn.kairahstudio.com/mock_videos/{video_id}.mp4"
     if VIDEO_API_URL and VIDEO_API_KEY:
@@ -434,9 +409,7 @@ async def api_generate_video(req: VideoRequest):
             d = resp.json()
             video_url = d.get("video_url") or d.get("url") or video_url
         except Exception:
-            # fallback to mock
             pass
-
     data["videos"][video_id] = {"video_id": video_id, "email": req.user_email, "prompt": req.prompt, "url": video_url, "length": length, "aspect_ratio": req.aspect_ratio, "timestamp": now_ts(), "fame_booster": req.fame_booster}
     data["users"].setdefault(req.user_email, {"email": req.user_email, "generated_videos": 0})
     data["users"][req.user_email]["generated_videos"] = data["users"][req.user_email].get("generated_videos", 0) + 1
@@ -444,9 +417,7 @@ async def api_generate_video(req: VideoRequest):
     save_data(data)
     return {"video_url": video_url, "video_id": video_id, "message": f"Video generated ({length}s)"}
 
-# ---------------------------
-# Download endpoint (restrict free)
-# ---------------------------
+# Download restriction
 @app.get("/api/download")
 async def api_download(video_id: str, email: str):
     v = data["videos"].get(video_id)
@@ -462,16 +433,11 @@ async def api_download(video_id: str, email: str):
         save_data(data)
     return {"video_url": v["url"], "message": "Download granted"}
 
-# ---------------------------
-# Payment webhook endpoints
-# ---------------------------
-
 # Paystack webhook (best-effort)
 @app.post("/api/paystack-webhook")
 async def paystack_webhook(request: Request):
     payload = await request.json()
     try:
-        # Typical payload may vary; this is best-effort
         status = payload.get("event") or payload.get("status") or payload.get("data", {}).get("status")
         if status == "success" or payload.get("data", {}).get("status") == "success":
             data_obj = payload.get("data", payload)
@@ -517,36 +483,21 @@ async def paypal_webhook(request: Request):
 @app.post("/api/mpesa-webhook")
 async def mpesa_webhook(request: Request):
     payload = await request.json()
-    # Implementation depends on provider; accept and log for now
+    # provider-specific parsing required; accept and log
     try:
-        # Example: parse phone/email/amount from payload
-        # If metadata includes email and plan, process upgrade
-        data_obj = payload.get("Body", payload)
-        metadata = data_obj.get("stkCallback", {}).get("CallbackMetadata", {})
-        # custom logic here
+        # parse if metadata present with email/plan
+        body = payload.get("Body", payload)
+        # handle real provider payload by mapping to email/amount/plan
     except Exception:
         pass
     return {"status": "ok"}
 
-# ---------------------------
-# Wise manual confirmation endpoint (admin)
-# ---------------------------
+# Wise manual confirm by admin
 @app.post("/api/admin/confirm-wise")
 async def admin_confirm_wise(payment_id: str, email: str, amount: float, plan: str = "Pro", ref_code: Optional[str] = None, admin: bool = Depends(require_admin)):
-    """
-    Admin confirms that a Wise transfer from a customer was received.
-    This will:
-    - record a payment
-    - upgrade the user's plan
-    - credit affiliate commissions if applicable
-    - optionally mark fame booster paid if plan/payment covers it and metadata indicates
-    """
     try:
-        # record payment
         rec = record_payment(payment_id, email, "wise", amount, metadata={"plan": plan})
-        # upgrade user
         upgrade_user_plan(email, plan)
-        # credit affiliate (if user had ref or provided ref_code)
         ref = ref_code or data["users"].get(email, {}).get("ref")
         if ref:
             credit_affiliate_for_sale(ref, amount, plan)
@@ -556,9 +507,7 @@ async def admin_confirm_wise(payment_id: str, email: str, amount: float, plan: s
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# ---------------------------
-# Admin & Reporting endpoints
-# ---------------------------
+# Admin & reporting
 @app.get("/admin/export/logs")
 async def admin_export_logs(admin: bool = Depends(require_admin)):
     return data["logs"]
@@ -624,9 +573,7 @@ async def admin_export_all(admin: bool = Depends(require_admin)):
         payments_csv += f'{p.get("payment_id","")},{p.get("email","")},{p.get("method","")},{p.get("amount","")},{p.get("status","")},{p.get("timestamp","")}\n'
     return {"users_csv": users_csv, "videos_csv": videos_csv, "payments_csv": payments_csv}
 
-# ---------------------------
 # FAQ
-# ---------------------------
 FAQ_CONTENT = [
     {"q": "How many free videos?", "a": "Free users can generate one 6-second video. Upgrade to Pro for more."},
     {"q": "What plans exist?", "a": "Pro, Diamond, Cinematic, Lifetime. See pricing in frontend."},
@@ -639,18 +586,16 @@ async def api_faq(q: Optional[str] = None):
         return [f for f in FAQ_CONTENT if q_lower in f["q"].lower() or q_lower in f["a"].lower()]
     return FAQ_CONTENT
 
-# ---------------------------
 # Health
-# ---------------------------
 @app.get("/health")
 async def health():
     return {"status": "ok", "time": now_ts()}
 
-# ---------------------------
-# Start app
-# ---------------------------
+# -------------------------
+# Run
+# -------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    print("Starting Kairah Studio backend (Wise +) - single-file")
-    print("Ensure ADMIN_API_KEY and other secrets are set in environment variables on Render.")
+    print("Starting Kairah Studio Backend (Final).")
+    print("Ensure ADMIN_API_KEY and any provider env vars are set in your environment.")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
