@@ -2,11 +2,6 @@ import os
 import sys
 import subprocess
 import json
-import requests
-from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
 
 # -----------------------------
 # Auto-install required packages
@@ -19,13 +14,22 @@ REQUIRED = [
     "pydantic",
     "firebase-admin",
     "paypalrestsdk",
-    "pywise",  # Add pywise for Wise integration
+    "pywise",  # For Wise API integration
 ]
+
+# Install any missing required packages
 for pkg in REQUIRED:
     try:
         __import__(pkg)
     except ImportError:
         subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+
+# Now import the necessary packages
+import requests
+from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
 # -----------------------------
 # Initialize FastAPI App and CORS
