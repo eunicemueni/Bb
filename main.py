@@ -1,25 +1,7 @@
-# main.py
-"""
-Kairah Studio - Full Production Backend
-Features:
-- Real user signup/login (Firebase or secure local DB)
-- Stripe, Paystack, PayPal, M-Pesa payments
-- Automatic plan upgrades (Free, Pro, Diamond, Cinematic, Lifetime)
-- Fame Booster logic included in Diamond, Cinematic, Lifetime (standalone $9 add-on optional)
-- Affiliate system with 70/30 split (Booster excluded), milestone bonus payouts
-- Video generation limits per plan: Free 6s, Pro 30-60s, Diamond 1-3min, Cinematic up to 5min, Lifetime unlimited
-- Aspect ratio handling: 16:9, 9:16, 1:1
-- Premium templates and music for Diamond, Cinematic, Lifetime
-- Admin & affiliate dashboards with reporting and logs
-- FAQ endpoint with professional detailed answers
-- Single-file deployment, auto-install requirements
-"""
-
 import os
 import sys
 import subprocess
 import json
-import stripe
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +15,6 @@ REQUIRED = [
     "fastapi",
     "uvicorn",
     "requests",
-    "stripe",
     "python-dotenv",
     "pydantic",
     "firebase-admin",
@@ -59,8 +40,6 @@ app.add_middleware(
 # -----------------------------
 # Environment Variables / Keys
 # -----------------------------
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "your_stripe_secret")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "your_stripe_webhook_secret")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "your_paystack_secret")
 PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "paystack_webhook_secret")
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "your_paypal_client_id")
@@ -70,12 +49,17 @@ MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "your_mpesa_secret")
 MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE", "your_shortcode")
 MPESA_PASSKEY = os.getenv("MPESA_PASSKEY", "your_passkey")
 MPESA_CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "https://yourdomain.com/api/mpesa-webhook")
+
+# Wise Payment Integration Environment Variables
+WISE_API_KEY = os.getenv("WISE_API_KEY", "your_wise_api_key")  # Add your Wise API Key here
+WISE_BUSINESS_NAME = os.getenv("WISE_BUSINESS_NAME", "kairah")  # Your business name on Wise
+WISE_ROUTING_NUMBER = os.getenv("WISE_ROUTING_NUMBER", "020123456")  # Routing number for Wise payments
+WISE_ACCOUNT_NUMBER = os.getenv("WISE_ACCOUNT_NUMBER", "12345678")  # Account number for Wise payments
+
 VIDEO_API_URL = os.getenv("VIDEO_API_URL", "https://yourvideoapi.com/generate")
 VIDEO_API_KEY = os.getenv("VIDEO_API_KEY", "your_video_api_key")
 PORT = int(os.getenv("PORT", 8000))
 FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
-
-stripe.api_key = STRIPE_SECRET_KEY
 
 # -----------------------------
 # Firebase Initialization
@@ -110,6 +94,7 @@ PLANS = {
     "Cinematic": {"price_month": 99, "price_year": 600, "video_limit": None},
     "Lifetime": {"price_one_time": 500, "video_limit": None},
 }
+
 FAME_BOOSTER_PRICE = 9
 
 # -----------------------------
@@ -163,12 +148,34 @@ def credit_affiliate(email: str, amount: float):
 async def index():
     return {"message": "Kairah Studio Backend Live!"}
 
-# --- Signup/Login endpoints (Firebase/local)
-# --- Video generation with plan-aware limits and Fame Booster
-# --- Payment webhooks (Stripe, Paystack, PayPal, M-Pesa)
-# --- Affiliate dashboard and commission handling
-# --- Admin routes: manage users, videos, payments, affiliates
-# --- FAQ endpoint: return full detailed professional answers
+# -----------------------------
+# Route to Handle Wise Payment Webhook
+# -----------------------------
+@app.post("/api/wise-webhook")
+async def wise_webhook(req: Request):
+    payload = await req.json()
+    # Process the Wise payment webhook payload
+    if payload.get("status") == "COMPLETED":
+        email = payload.get("email")
+        amount = payload.get("amount")
+        plan = "Pro"  # Update based on the plan purchased
+        upgrade_user_plan(email, plan)
+        record_payment(payload["id"], email, "wise", amount, "completed")
+    return {"status": "success"}
+
+# -----------------------------
+# Payment Methods (to be displayed in frontend)
+# -----------------------------
+@app.get("/api/payment-methods")
+async def payment_methods():
+    return {
+        "methods": [
+            {"name": "Wise", "method": "wise", "icon": "wise_icon_url_here"},
+            {"name": "Paystack", "method": "paystack", "icon": "paystack_icon_url_here"},
+            {"name": "PayPal", "method": "paypal", "icon": "paypal_icon_url_here"},
+            {"name": "M-Pesa", "method": "mpesa", "icon": "mpesa_icon_url_here"},
+        ]
+    }
 
 # -----------------------------
 # Run Server
