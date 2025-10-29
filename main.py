@@ -30,7 +30,9 @@ REQUIRED = [
     "python-dotenv",
     "pydantic",
     "firebase-admin",
+    "gunicorn",
 ]
+
 for pkg in REQUIRED:
     try:
         __import__(pkg)
