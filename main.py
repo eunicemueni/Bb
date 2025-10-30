@@ -16,7 +16,6 @@ import os
 import sys
 import subprocess
 import json
-import stripe
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,8 +55,6 @@ app.add_middleware(
 # -----------------------------
 # Environment / API keys
 # -----------------------------
-STRIPE_SECRET_KEY = "sk_test_yourstripekey"
-STRIPE_WEBHOOK_SECRET = "whsec_123456"
 PAYSTACK_SECRET_KEY = "sk_test_paystackkey"
 PAYSTACK_WEBHOOK_SECRET = "paystack_webhook_secret"
 MPESA_CONSUMER_KEY = "mpesa_key"
@@ -75,8 +72,6 @@ VIDEO_API_KEY = "your_video_api_key"
 FIREBASE_SERVICE_ACCOUNT_JSON = "your_firebase_service_account_json"
 PORT = 8000
 FAME_BOOSTER_PRICE = 9
-
-stripe.api_key = STRIPE_SECRET_KEY
 
 # -----------------------------
 # Firebase init
@@ -126,7 +121,7 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
 
-class VideoRequest(BaseModel):
+class VideoRequest(BaseModel)
     user_email: str
     prompt: str
     aspect_ratio: Optional[str] = "16:9"
