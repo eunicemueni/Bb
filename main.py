@@ -75,7 +75,8 @@ FIREBASE_SERVICE_ACCOUNT_JSON = "your_firebase_service_account_json"
 PORT = 8000
 FAME_BOOSTER_PRICE = 9
 
-stripe.api_key = STRIPE_SECRET_KEY
+# stripe.api_key = STRIPE_SECRET_KEY  # Removed since Stripe is no longer used
+
 
 # -----------------------------
 # Firebase init
